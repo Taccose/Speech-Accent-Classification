@@ -18,7 +18,9 @@ from IPython.display import HTML, display
 import time
 warnings.filterwarnings('ignore')
 
+## The report: https://medium.com/@ylfeng980/speech-accent-classification-statistical-learning-and-deep-learning-methods-80a37587e262
 
+##Data source: https://www.kaggle.com/datasets/rtatman/speech-accent-archive/data
 data=pd.read_csv(r"C:\Users\Tacco Feng\Documents\HW\archive\speakers_all.csv",index_col='speakerid')
 data.head()
 data.info()
@@ -31,15 +33,12 @@ directory_path = r'C:\Users\Tacco Feng\Documents\HW\archive\recordings\recording
 
 def feature_engineering(directory_path, data):
     p = 0
-
     df = pd.DataFrame()
     #tmp = pd.DataFrame()
     # p=1
     for index, row in data.iterrows():
         tmp = pd.Series()
-
         if os.path.isfile(directory_path+ '\\' + row['filename'] + '.mp3') == True:
-
           print(row['filename'])
           print(row['country'])
           tmp['filename'] = row['filename']
@@ -53,13 +52,11 @@ def feature_engineering(directory_path, data):
           tmp['spec_bw'] = np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)) #Spectral Bandwidth
           tmp['rolloff'] = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)) #Spectral Rolloff
           tmp['zcr'] = np.mean(librosa.feature.zero_crossing_rate(y)) #Zero Crossing Rate
-
           mfcc = librosa.feature.mfcc(y=y, sr=sr,n_mfcc=40) #Mel-Frequency Cepstral Coefficients
           i = 0
           for e in mfcc:
             tmp['mfcc' + str(i)] = np.mean(e)
             i += 1
-
           df = df._append(tmp,ignore_index=True)
           #df = pd.concat([df, tmp])
           print(p)
@@ -68,30 +65,36 @@ def feature_engineering(directory_path, data):
 
 df=feature_engineering(directory_path,data)
 
-result = pd.concat([df, df2], axis=0)
-df =result
-
 df['1stlang'] = df['filename'].apply(lambda x: re.sub(r'\d', '', x))
 label_encoder = LabelEncoder()
 df['accent_code'] = label_encoder.fit_transform(df['1stlang'])
+# Choose Arabic and Mandarin 
 condition = df['accent_code'].isin([0, 3])
 df = df[condition]
 numeric_columns = df.select_dtypes(include=[np.number]).columns
 grouped_df = df.groupby('accent_code')[numeric_columns].mean()
-replace_dict = {3:1}
-# 使用 replace 方法替换 accent_code 列中的值
+replace_dict = {3:1}  # Label "Arabic" as 0, and "Mandarin" as 1
 df['accent_code'] = df['accent_code'].replace(replace_dict)
 
 
-#################################################################
+#################
+## Save the data after sampling
+df.to_pickle('df.pkl')
+data.to_pickle('data.pkl')
+
+## Read the data from saved files directly to avoid resampling everytime
+df = pd.read_pickle('df.pkl')
+data = pd.read_pickle('data.pkl')
+
+###################################################################################################
 #EDA
 f, ((ax11, ax12)) = plt.subplots(1, 2, sharex=False, sharey=False)
-# 01 左，信号
+# Left
 ax11.set_title('Signal')
 ax11.set_xlabel('Time (samples)')
 ax11.set_ylabel('Amplitude')
 ax11.plot(y)
-# 02 右，傅里叶变换
+# Right FFT
 n_fft = 2048
 ft = np.abs(librosa.stft(y[:n_fft], hop_length=n_fft + 1))
 ax12.set_title('Spectrum')
@@ -100,12 +103,12 @@ ax12.set_xlabel('Frequency Bin')
 ax12.plot(ft)
 plt.show()
 
+#Mel
 n_mels = 64
 n_frames = 5
 n_fft = 1024
 hop_length = 512
 power = 2.0
-
 mel_spectrogram = librosa.feature.melspectrogram(y=y,
                                                  sr=sr,
                                                  n_fft=n_fft,
@@ -115,87 +118,63 @@ mel_spectrogram = librosa.feature.melspectrogram(y=y,
 librosa.display.specshow(librosa.power_to_db(mel_spectrogram, ref=np.max),
                          y_axis='mel', fmax=8000, x_axis='time')
 plt.colorbar(format='%+2.0f dB')
-##################################################################################
-
 plt.show()
 
-# 04 将mel谱图转换为log mel谱图
+# Log mel
 log_mel_spectrogram = 20.0 / power * np.log10(np.maximum(mel_spectrogram, sys.float_info.epsilon))
 librosa.display.specshow(librosa.power_to_db(log_mel_spectrogram, ref=np.max),
                          y_axis='mel', fmax=8000, x_axis='time')
 # plt.colorbar(format='%+2.0f dB')
-##################################################################################
-
 plt.show()
 
-
-#### MFCC BOX
-# 选择需要比较的 MFCC 特征列（mfcc0 到 mfcc20）
-mfcc_features = [f'mfcc{i}' for i in range(20)]  # mfcc0 到 mfcc19
-
-# 设置子图的行数和列数
-num_rows = 5  # 总共 21 个特征，每行显示 5 个，共 5 行
-num_cols = 4  # 每列显示 4 个特征
-
-# 创建子图
+## MFCC BOX
+mfcc_features = [f'mfcc{i}' for i in range(20)]  
+num_rows = 5 
+num_cols = 4 
 fig, axes = plt.subplots(num_rows, num_cols, figsize=(20, 20))
 
-# 遍历每个 MFCC 特征，并在相应的子图中绘制箱线图
 for i, feature in enumerate(mfcc_features):
-    row = i // num_cols  # 计算当前特征所在的行号
-    col = i % num_cols   # 计算当前特征所在的列号
+    row = i // num_cols  
+    col = i % num_cols   
     sns.boxplot(x='1stlang', y=feature, data=df, ax=axes[row, col])
     axes[row, col].set_title(f' {feature} ')
     axes[row, col].set_xticklabels([])
     axes[row, col].set_ylabel('')
     axes[row, col].set_xlabel('')
-
-
-# 调整子图之间的间距和布局
+    
 plt.tight_layout()
 plt.show()
-
-
-
 mfcc_features = [f'mfcc{i}' for i in range(20)]
-# 创建子图
 fig, axes = plt.subplots(num_rows, num_cols, figsize=(20, 20))
 
-# 遍历每个 MFCC 特征，并在相应的子图中绘制箱线图
+# Mfcc Scatter 
 for i, feature in enumerate(mfcc_features):
-    row = i // num_cols  # 计算当前特征所在的行号
-    col = i % num_cols   # 计算当前特征所在的列号
+    row = i // num_cols  
+    col = i % num_cols   
     sns.scatterplot(x='1stlang', y=feature, data=df, ax=axes[row, col])
     axes[row, col].set_title(f' {feature} ')
     axes[row, col].set_xticklabels([])
     axes[row, col].set_ylabel('')
     axes[row, col].set_xlabel('')
 
-
-# 调整子图之间的间距和布局
 plt.tight_layout()
 plt.show()
 
+#Stacked Spectrograms for each group
 fig = plt.figure(figsize=(20, 10))
 for i in range(102,681): # Change diffrent group by different range
   y=df.loc[i,'audio_vector']
   n_fft = 2048
   ft = np.abs(librosa.stft(y[:n_fft], hop_length=n_fft + 1))
-  plt.plot(ft, alpha=0.5)  # alpha 设置为0.5，使得每个频谱图半透明叠加
-
-# 设置图形标题和坐标轴标签
+  plt.plot(ft, alpha=0.5)  
 plt.title('Stacked Spectrograms of Audio Vectors')
 plt.xlabel('Time')
 plt.ylabel('Frequency')
-
-# 显示图例（可选）
 # plt.legend()
 plt.ylim(0, 1.5)
-# 显示图形
 plt.show()
 
 df['ft'] = None
-
 for index, row in df.iterrows():
     y = df.loc[index, 'audio_vector']
     n_fft = 2048
@@ -203,33 +182,20 @@ for index, row in df.iterrows():
     df.at[index, 'ft'] = ft
 
 
-
-##################################################
 ##Box plot 
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
-# 设置绘图风格
 sns.set(style="whitegrid")
-
-# 列出所有需要绘制箱线图的特征
 features = ['rms', 'chroma_stft', 'spec_cent', 'spec_bw', 'rolloff', 'zcr']
-
-# 创建图形对象
 fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(18, 10))
 
-# 遍历特征并绘制箱线图
 for ax, feature in zip(axes.flatten(), features):
     sns.boxplot(x='accent_code', y=feature, data=df, ax=ax)
     ax.set_title(f'Boxplot of {feature} by Group')
     ax.set_xlabel('Group')
     ax.set_ylabel(feature)
 
-# 调整子图间距
 plt.tight_layout()
 plt.show()
+
 
 ##############################################################################################################################
 ##Logistic regression
@@ -241,45 +207,31 @@ df['intercept'] = 1.0
 X =df[[ 'rms','chroma_stft', 'spec_cent', 'spec_bw','rolloff','zcr','mfcc0', 'mfcc1', 'mfcc2','mfcc3','mfcc4','mfcc5','mfcc6','mfcc7','mfcc8','mfcc9','mfcc10',
         'mfcc11','mfcc12','mfcc13','mfcc14','mfcc15','mfcc16','mfcc17','mfcc18','mfcc19']]
 y = df['accent_code']
-
 logit_model = sm.Logit(y, X)
-
 result = logit_model.fit()
-
 print(result.summary())
-
 p_values = result.pvalues
 p_values_sorted = p_values.sort_values()
 
-# 创建一个DataFrame以便绘制柱状图
 p_values_df = pd.DataFrame(p_values_sorted, columns=['p_value'])
 
-# 绘制柱状图
 plt.figure(figsize=(10, 6))
 p_values_df['p_value'].plot(kind='bar', color='skyblue')
 plt.title('P-values of Logistic Regression Coefficients')
 plt.xlabel('Features')
 plt.ylabel('P-value')
 plt.xticks(rotation=45, ha='right')
-plt.axhline(y=0.05, color='r', linestyle='--')  # 添加显著性水平线
+plt.axhline(y=0.05, color='r', linestyle='--')  
 plt.tight_layout()
 plt.show()
 
 
 
-##################################################################################################################
+######################################################
 ###Clusering
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-
-
-######
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 
 def plot_elbow_method(X_scaled, max_k=10):
     sse = []
@@ -296,7 +248,6 @@ def plot_elbow_method(X_scaled, max_k=10):
     plt.show()
 
 def perform_kmeans_with_elbow(df):
-    # 选择特征
     feature_cols = [
         'rms', 'chroma_stft', 'spec_cent', 'spec_bw', 'rolloff', 'zcr',
         'mfcc0', 'mfcc1', 'mfcc2', 'mfcc3', 'mfcc4', 'mfcc5', 'mfcc6', 'mfcc7', 'mfcc8', 'mfcc9',
@@ -304,19 +255,17 @@ def perform_kmeans_with_elbow(df):
     ]
     X = df[feature_cols]
 
-    # 标准化特征
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # 绘制肘部图以确定最佳K值
     plot_elbow_method(X_scaled, max_k=10)
 
-    # 假设根据肘部图选择了最佳K值，例如2
+    # Optimal K, e.g. k=4
     optimal_k = 4
     kmeans = KMeans(n_clusters=optimal_k, random_state=42)
     df['cluster'] = kmeans.fit_predict(X_scaled)
 
-    # PCA降维到2D进行可视化
+    # PCA 2D
     from sklearn.decomposition import PCA
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
@@ -333,17 +282,17 @@ def perform_kmeans_with_elbow(df):
 
     return df
 
-# 假设 df 是包含原始数据的 DataFrame
 df_clustered = perform_kmeans_with_elbow(df)
 
 
+# PCA 2D 
 def perform_clustering(df):
     # Select features for clustering
     feature_cols = [
         'rms', 'chroma_stft', 'spec_cent', 'spec_bw', 'rolloff', 'zcr',
         'mfcc0', 'mfcc1', 'mfcc2', 'mfcc3', 'mfcc4', 'mfcc5', 'mfcc6', 'mfcc7', 'mfcc8', 'mfcc9',
         'mfcc10', 'mfcc11', 'mfcc12', 'mfcc13', 'mfcc14', 'mfcc15', 'mfcc16', 'mfcc17', 'mfcc18', 'mfcc19'
-    ] #
+    ] 
     X = df[feature_cols]
 
     # Standardize the features
@@ -370,7 +319,6 @@ def perform_clustering(df):
     plt.figure(figsize=(10, 7))
     scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=df['cluster'], cmap='viridis', marker='o')
 
-
     # Add labels to each point
     for i, txt in enumerate(df.accent_code):
         plt.annotate(txt, (X_pca[i, 0], X_pca[i, 1]), fontsize=8, alpha=0.7)
@@ -387,13 +335,8 @@ def perform_clustering(df):
 
 df_clustered = perform_clustering(df)
 
-##3D
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
+##PCA 3D
 from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
 from sklearn.metrics import silhouette_score
 
 def perform_clustering(df):
@@ -449,13 +392,11 @@ def perform_clustering(df):
 
     return df
 
-
 df_clustered = perform_clustering(df)
 
 
-##############################################################################################
+################################
 ##Ramdon Forrest with cluster labels
-import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 def evaluate_feature_importance(df):
     # Select features and target
@@ -489,14 +430,13 @@ def evaluate_feature_importance(df):
 
     return feature_importances
 
-
 # Evaluate feature importance
 feature_importances = evaluate_feature_importance(df_clustered)
 print("Feature Importances:\n", feature_importances)
 
 
-
-###########################################################################################################
+### Model
+#######################################################################################################
 ###Lasso
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import Lasso
@@ -509,23 +449,18 @@ X =df[[ 'rms','chroma_stft', 'spec_cent', 'spec_bw','rolloff','zcr','mfcc0', 'mf
 y = df['accent_code']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-
-lasso = Lasso(alpha=0.1)  # 设置 Lasso 回归的 alpha 参数
+lasso = Lasso(alpha=0.1)  
 lasso.fit(X_train_scaled, y_train)
-
 
 print("Lasso：")
 for feature, coef in zip(X.columns, lasso.coef_):
     print(f"{feature}: {coef}")
 
-
 y_pred = lasso.predict(X_test_scaled)
-
 
 print("Lasso Report：")
 print(classification_report(y_test, y_pred.round()))
@@ -536,19 +471,18 @@ print(latex_table)
 
 
 
-###########################################################################################################
-###Ramdon forest
-
+#################################################################
+###Ramdon forrest with true labels
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report
 
-#
+# Conduct feature selection separately
 X =df[[ 'rms','chroma_stft', 'spec_cent', 'spec_bw','rolloff','zcr','mfcc0', 'mfcc1', 'mfcc2','mfcc3','mfcc4','mfcc5','mfcc6','mfcc7','mfcc8','mfcc9','mfcc10',
         'mfcc11','mfcc12','mfcc13','mfcc14','mfcc15','mfcc16','mfcc17','mfcc18','mfcc19']]
 #X =df[[ 'spec_cent', 'spec_bw','rolloff','mfcc0', 'mfcc1', 'mfcc3','mfcc5','mfcc6','mfcc7','mfcc9','mfcc10',
- #       'mfcc12','mfcc13','mfcc14','mfcc15','mfcc16','mfcc17','mfcc18','mfcc19']]
+#       'mfcc12','mfcc13','mfcc14','mfcc15','mfcc16','mfcc17','mfcc18','mfcc19']]
 y = df['accent_code']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -557,17 +491,15 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-random_forest = RandomForestClassifier(n_estimators=100, random_state=42)  # 设置随机森林参数
+random_forest = RandomForestClassifier(n_estimators=100, random_state=42)  
 random_forest.fit(X_train_scaled, y_train)
 
 y_pred = random_forest.predict(X_test_scaled)
 
 print("RF report：")
 print(classification_report(y_test, y_pred))
-
 print(random_forest.get_params())
 
-# 提取特征重要性
 importances = random_forest.feature_importances_
 feature_names = X.columns
 feature_importance_df = pd.DataFrame({'Feature': feature_names, 'Importance': importances})
@@ -576,7 +508,6 @@ feature_importance_df = feature_importance_df.sort_values(by='Importance', ascen
 print("Feature Importance:")
 print(feature_importance_df)
 
-# 绘制特征重要性图
 plt.figure(figsize=(12, 8))
 sns.barplot(x='Importance', y='Feature', data=feature_importance_df)
 plt.title('Feature Importance from Random Forest Model')
@@ -584,41 +515,36 @@ plt.xlabel('Importance')
 plt.ylabel('Feature')
 plt.show()
 
-##################################################################################################################
+#######################################################################
 #Cat boost
-import pandas as pd
-import numpy as np
-import librosa
 from catboost import CatBoostClassifier, Pool
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report
-#'chroma_stft', 'spec_cent', 'spec_bw','rolloff','zcr',
+
+'''
 X =df[['mfcc0', 'mfcc1', 'mfcc2','mfcc3','mfcc4','mfcc5','mfcc6','mfcc7','mfcc8','mfcc9','mfcc10','mfcc11',
     'mfcc12','mfcc13','mfcc14','mfcc15','mfcc16','mfcc17','mfcc18','mfcc19']]
-
+'''
 
 X =df[[ 'chroma_stft', 'spec_cent', 'spec_bw', 'rolloff', 'zcr',
          'mfcc1',  'mfcc3', 'mfcc4', 'mfcc5', 'mfcc6', 'mfcc7',
         'mfcc10', 'mfcc12', 'mfcc13', 'mfcc14',  'mfcc16', 'mfcc17', 'mfcc18']]
 y = df['accent_code']
+
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 标准化特征
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# 训练CatBoost模型
 catboost_model = CatBoostClassifier(iterations=1000, learning_rate=0.1, depth=6, verbose=100)
 catboost_model.fit(X_train_scaled, y_train)
 
-# 预测并打印分类报告
 y_pred = catboost_model.predict(X_test_scaled)
 print("CatBoost Classification Report:")
 print(classification_report(y_test, y_pred))
 
-# 提取特征重要性
 feature_importance = catboost_model.get_feature_importance(Pool(X_train_scaled, label=y_train))
 feature_names = X.columns
 feature_importance_df = pd.DataFrame({'Feature': feature_names, 'Importance': feature_importance})
@@ -627,7 +553,6 @@ feature_importance_df = feature_importance_df.sort_values(by='Importance', ascen
 print("Feature Importance:")
 print(feature_importance_df)
 
-# 绘制特征重要性图
 plt.figure(figsize=(12, 8))
 sns.barplot(x='Importance', y='Feature', data=feature_importance_df)
 plt.title('Feature Importance from CatBoost Model')
@@ -635,7 +560,8 @@ plt.xlabel('Importance')
 plt.ylabel('Feature')
 plt.show()
 
-####################################################################################
+######################################################
+################### Neural network
 ###CNN
 class CNN(nn.Module):
     def __init__(self, num_classes):
@@ -772,8 +698,6 @@ def train_model(model, train_loader, criterion, optimizer, epochs=50, is_transfo
         train_losses.append(running_loss / len(train_loader))
         valid_accuracies.append(valid_accuracie)
 
-
-
     plt.figure(figsize=(10, 5))
 
     plt.subplot(1, 2, 1)
@@ -792,7 +716,6 @@ def train_model(model, train_loader, criterion, optimizer, epochs=50, is_transfo
 
     plt.tight_layout()
     plt.show()
-
 
 def evaluate_model(model, test_loader, is_transformer):
     model.eval()
